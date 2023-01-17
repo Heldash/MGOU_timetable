@@ -144,7 +144,7 @@ def upload_rasp():
                         ser_col+=1
                     # if title ==None:
                     #     title = tested_val(sheet,1,3,title)
-                    if ser_row ==
+                    # if ser_row ==
                     actual_group = None
                     for name in all_groups:
                         if all(i in title for i in name.split()):
@@ -152,14 +152,14 @@ def upload_rasp():
                             break
                     arr_gr = []
                     #  Попробую по другому реализовать организацию групп
-                    # for gr in range(3,sheet.max_column+1):
-                    #     gr_name = sheet.cell(row = 2,column = gr).value
-                    #     if gr_name == None:
-                    #         gr_name = tested_val(sheet,2,gr,gr_name)
-                    #     if gr_name != None:
-                    #         arr_gr.append(gr_name)
+                    for gr in range(3,sheet.max_column+1):
+                        gr_name = sheet.cell(row = 2,column = gr).value
+                        if gr_name == None:
+                            gr_name = tested_val(sheet,2,gr,gr_name)
+                        if gr_name != None:
+                            arr_gr.append(gr_name)
 
-                    # all_gr= make_gr_arr(arr_gr)
+                    all_gr= make_gr_arr(arr_gr)
                     if actual_group != None:
                         if "занятий" in title:
                             if "факультативным" in title:
