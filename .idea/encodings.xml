@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="Encoding">
+    <file url="file://$PROJECT_DIR$/expert.py" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/mgou.json" charset="windows-1251" />
+    <file url="file://$PROJECT_DIR$/plan.py" charset="windows-1251" />
     <file url="file://$PROJECT_DIR$/tel_bot.py" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/telegram_bot_osnova.py" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/ДСИИЯ.json" charset="windows-1251" />
     <file url="PROJECT" charset="windows-1251" />
   </component>

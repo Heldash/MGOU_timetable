@@ -1,13 +1,13 @@
 # # -*- coding: cp1251 -*-
 import os
 import zipfile
+import time
+import openpyxl.cell.cell
 from openpyxl import load_workbook
 import json
 import datetime
-import copy
-from GoogleShetrob import download_file
-from progress.bar import IncrementalBar
 from pprint import pprint
+import copy
 # os.chdir(os.path.join("Fakultet","Медицинский факультет","Очная","Специалитет","31.05.01"))
 # print(os.getcwd())
 # print(os.getcwd())
@@ -26,7 +26,7 @@ def tested_val(sheet,i,k,val):
             val = top_value
             break
     return val
-def make_gr_arr(arr):
+def make_gr_arr(arr:list):
     """Возвращает список с именами групп если есть копии то они именуется как название_группы*номер_группы"""
     res = []
     for i in range(len(arr)):
@@ -35,39 +35,72 @@ def make_gr_arr(arr):
         else:
             res.append(arr[i])
     return res
-# Отсортировать список наооборот самый первый это самое большое число,потом по убывающей искать подходящее направление
-def pars_lessons(sheet,k):
-    date_pars = {}
+def proverk_lesson(arr:list,pars:str,val:str):
+    """Проверяет есть ли пара уже такая в расписании"""
+    for i in range(len(arr)):
+        if pars in arr[i] and val not in arr[i]:
+            arr[i] = f"{arr[i]} | {val}"
+            break
+        elif pars in arr[i] and val in arr[i]:
+            return sorted(arr)
+    else:
+        arr.append(f'{pars}: {val}')
+    return sorted(arr)
+def clear_str(strok):
+    """Очищает строку от ненужных переносов и другий неприятностей форматирования"""
+    #  
+    arr_ahtung = [" ",",","\n","\t","|","<",">","/","\\","?",":",";","\"", "  "]
+
+    for i in arr_ahtung:
+        while i in strok:
+            strok = strok.replace(i," ")
+    return strok
+
+def pars_lessons(sheet,dat_coord,pars_coord,special_timetable,col,groups,only_time = False):
+    """Отсортировать список наооборот самый первый это самое большое число,потом по убывающей искать подходящее направление"""
+    if groups == {}:
+        date_pars = {}
+    else:
+        date_pars = groups
     act_dat = None
-    for j in range(2, sheet.max_row + 1):
-        res = sheet.cell(row=j, column=1).value
+    if special_timetable:
+        row = dat_coord[0]+2
+    else:
+        row = dat_coord[0]+1
+    for j in range(row, sheet.max_row + 1):
+        res = sheet.cell(row=j, column=dat_coord[1]).value
         if res == None:
-            res = tested_val(sheet, j, 3 + k, res)
+            res = tested_val(sheet, j, col, res)
         if type(res) == datetime.datetime:
             res = res.strftime("%d.%m.%y")
             if res not in date_pars:
                 date_pars[res] = []
-                act_dat = res
+            act_dat = res
+            if only_time:
+                cnt = 0
         if act_dat != None:
-            val = sheet.cell(row=j, column=3 + k).value
+            if only_time:
+                cnt+=1
+            val = sheet.cell(row=j, column=col).value
             if val == None:
-                val = tested_val(sheet, j, 3 + k, val)
+                val = tested_val(sheet, j, col, val)
             if val != None:
-                para = sheet.cell(row=j, column=2).value
+                para = sheet.cell(row=j, column=pars_coord[1]).value
                 if para != None:
                     if type(para) == datetime.datetime:
                         para = para.strftime("%d.%m.%y")
                     if type(val) == datetime.datetime:
                         val = val.strftime("%d.%m.%y")
                     para = para.replace("\n", " ")
-                    para = para+": " +val
-                    while "  " in para:
-                        para = para.replace("  ", " ")
-                    date_pars[act_dat].append(para)
+                    # para = para+": " +val
+                    para = clear_str(para)
+                    if only_time:
+                        para = f"{cnt} пара {para}"
+                    date_pars[act_dat] = proverk_lesson(date_pars[act_dat],para,val)
+                    # date_pars[act_dat].append(para)
     for dat in copy.copy(date_pars):
         if date_pars[dat] == []:
             del date_pars[dat]
-
     return date_pars
 
 def upload_rasp():
@@ -75,16 +108,15 @@ def upload_rasp():
     # try:
     with open("mgou.json","r") as S:
         osnova = json.load(S)
-    # os.chdir("./Fakultet")
-    bar = IncrementalBar('Countdown', max=len(list(osnova.keys())))
     for fak in osnova:
         for form_obych in osnova[fak]:
             for level in osnova[fak][form_obych]:
-                names_napr = [i for i in osnova[fak][form_obych][level]]
+                names_napr = list(osnova[fak][form_obych][level].keys())
                 names_napr.sort(key=len,reverse=True)
+                name_abreviature = {}
                 all_groups = {}
                 for temp in names_napr:
-                    all_groups[temp] = {"ФТД":{"Занятия": {},
+                    all_groups[" ".join(temp.split())] = {"ФТД":{"Занятия": {},
                               "Экзамены":{},
                               "Зачеты":{},
                               "Гос.экз":{}},
@@ -93,28 +125,15 @@ def upload_rasp():
                                       "Зачеты": {},
                                       "Гос.экз": {}}
                               }
-                # for temp in names_napr:
-                #     all_groups["расшифровка"][made_abrev(temp)] = temp
-                print(all_groups)
-                # print(f"{fak}/{form_obych}/{level}",end="")
-                # for prog in osnova[fak][form_obych][level]:
-                # print(prog)
-                # prog_socr = prog.split()[0]
-                # put_dir = os.path.join(osn_dir,"Fakultet",fak,form_obych,level,prog_socr)
+                    name_abreviature[made_abrev(clear_str(temp))] = temp # В дальнейшем нужно для сопоставления расписания с направлением
+                # print(name_abreviature)
+                is_eror = False
+                # print(list(all_groups.keys()))
                 put_dir = os.path.join(osn_dir,"Fakultet",fak,form_obych,level)
-                # all_groups = {}
-                # groups = {"ФТД":{"Занятия": {},
-                #           "Экзамены":{},
-                #           "Зачеты":{},
-                #           "Гос.экз":{}},
-                #           "Учебные дисциплины": {"Занятия": {},
-                #                   "Экзамены": {},
-                #                   "Зачеты": {},
-                #                   "Гос.экз": {}}
-                #           }
                 files = [i for i in os.listdir(put_dir) if i[-4:]=="xlsx" and i[0]!="~"]
                 if files == []:
                     continue
+                title = None
                 for i in files:
                     try:
                         wb = load_workbook(f"{put_dir}/{i}")
@@ -127,8 +146,6 @@ def upload_rasp():
                     #         continue
                     except:
                         continue
-                    # if len(wb.sheetnames) >1:
-                    #     print(wb.sheetnames)
                     sheet = wb[wb.sheetnames[0]]
                     title = sheet.cell(row = 1,column = 1).value
                     ser_row,ser_col = 1,1 #Искомые строки и столбцы от search row and search column
@@ -136,84 +153,213 @@ def upload_rasp():
                         if ser_col>sheet.max_column:
                             ser_row +=1
                             ser_col =1
-                        title = sheet.cell(row = ser_row,column = ser_col).value
+                        title = sheet.cell(row = ser_row, column = ser_col).value
                         if title == None:
                             title = tested_val(sheet, ser_row, ser_col, title)
                         # if type(title) == str or type(title) != datetime.datetime or "Расписание" in title:
                         #     continue
                         ser_col+=1
+                        if ser_row >10:
+                            is_eror = True
+                            break
+                    if title == None or type(title) == datetime.datetime:
+                        continue
                     # if title ==None:
                     #     title = tested_val(sheet,1,3,title)
                     # if ser_row ==
-                    actual_group = None
-                    for name in all_groups:
-                        if all(i in title for i in name.split()):
-                            actual_group = name
-                            break
-                    arr_gr = []
-                    #  Попробую по другому реализовать организацию групп
-                    for gr in range(3,sheet.max_column+1):
-                        gr_name = sheet.cell(row = 2,column = gr).value
-                        if gr_name == None:
-                            gr_name = tested_val(sheet,2,gr,gr_name)
-                        if gr_name != None:
-                            arr_gr.append(gr_name)
+                    actual_group = name_abreviature[(i.split())[0]]
+                    title = clear_str(title)
 
-                    all_gr= make_gr_arr(arr_gr)
+                    group_row = ser_row +1
+                    day_coord = (0, 0)
+                    pars_coord = (0, 0)
+                    ro = co = 1
+                    only_time = False
+                    while day_coord == (0, 0) and pars_coord == (0, 0):
+                        if type(sheet.cell(ro,co))==openpyxl.cell.cell.MergedCell:
+                            val = tested_val(sheet,ro,co,(sheet.cell(ro,co).value)).lower()
+                        else:
+                            try:
+                                val = (sheet.cell(ro,co).value).lower()
+                            except:
+                                val = sheet.cell(ro,co).value
+                        if val is not None:
+                            if any(i in val for i in ("дата","день","день недели")):
+                                day_coord = (ro,co)
+                            # elif "пара"in val:
+                            #     pars_coord = (ro,co)
+                            #     only_time = False
+                            # elif "время" in val:
+                            #     pars_coord = (ro, co)
+                            #     only_time = True
+
+                            elif type(val) == datetime.datetime:
+                                group_row = day_coord[0]
+                                if type(sheet.cell(day_coord[0], day_coord[1]+1)) == openpyxl.cell.cell.MergedCell:
+                                    val_par = str(tested_val(sheet, day_coord[0], day_coord[1]+1, (sheet.cell(day_coord[0], day_coord[1]+1).value))).lower()
+                                else:
+                                    try:
+                                        val_par = str(sheet.cell(day_coord[0], day_coord[1]+1).value).lower()
+                                    except:
+                                        val_par = sheet.cell(day_coord[0], day_coord[1]+1).value
+                                if "пара" in val_par:
+                                    only_time = False
+                                elif "время" in val_par:
+                                    only_time = True
+                                pars_coord = (day_coord[0],day_coord[1]+1)
+                        if ro > 10:
+                            break
+                        ro +=1
+                    if day_coord == (0, 0) or pars_coord == (0, 0):
+                        continue
+
+
+                    special_timetable = False #Необычное ли расписание
                     if actual_group != None:
-                        if "занятий" in title:
-                            if "факультативным" in title:
-                                for k in range(len(all_gr)):
-                                    all_groups[actual_group]["ФТД"]["Занятия"][all_gr[k]] = pars_lessons(sheet, k)
-                            else:
-                                for k in range(len(all_gr)):
-                                    all_groups[actual_group]["Учебные дисциплины"]["Занятия"][all_gr[k]] = pars_lessons(sheet,k)
-                        elif "экзаменационной" in title:
-                            if "факультативным" in title:
-                                for k in range(len(all_gr)):
-                                    all_groups[actual_group]["ФТД"]["Экзамены"][all_gr[k]] = pars_lessons(sheet,k)
-                            else:
-                                for k in range(len(all_gr)):
-                                    all_groups[actual_group]["Учебные дисциплины"]["Экзамены"][all_gr[k]] = pars_lessons(sheet, k)
-                        elif"зачетной" in title:
-                            if "факультативным" in title:
-                                for k in range(len(all_gr)):
-                                    all_groups[actual_group]["ФТД"]["Зачеты"][all_gr[k]] = pars_lessons(sheet, k)
-                            else:
-                                for k in range(len(all_gr)):
-                                    all_groups[actual_group]["Учебные дисциплины"]["Зачеты"][all_gr[k]] = pars_lessons(sheet, k)
-                        elif"аттестационных испытаний" in title:
-                            if "факультативным" in title:
-                                for k in range(len(all_gr)):
-                                    all_groups[actual_group]["ФТД"]["Гос.экз"][all_gr[k]] = pars_lessons(sheet, k)
-                            else:
-                                for k in range(len(all_gr)):
-                                    all_groups[actual_group]["Учебные дисциплины"]["Гос.экз"][all_gr[k]] = pars_lessons(sheet, k)
-                all_groups["расшифровка"] = {}
-                count_napr = {}
-                for temp in names_napr:
-                    abrev = made_abrev(temp)
-                    if abrev not in count_napr:
-                        count_napr[abrev] = 0
-                    elif abrev in count_napr:
-                        count_napr[abrev] +=1
-                    if abrev in all_groups["расшифровка"]:
-                        all_groups["расшифровка"][abrev+str(count_napr[abrev])] = temp
+                        col = 1
+                        day_coord = (group_row,1)
+                        pars_coord = (group_row,2)
+
+                        if type(sheet.cell(row = group_row+1,column = 1).value) == datetime.datetime or \
+                                type(sheet.cell(row = group_row+1,column = 1).value) == str or \
+                                type(sheet.cell(row = group_row+1,column = 2).value) == str:
+                            special_timetable = False
+                        elif sheet.cell(row = group_row+1,column = 1).value== None:
+                            special_timetable = True
+                        while sheet.cell(row = group_row,column = col).value != None \
+                                or tested_val(sheet,group_row,col,sheet.cell(row = group_row,column = col).value):
+                            if str(sheet.cell(row = group_row,column = col).value).lower() == "день" \
+                                    or "день" in str(sheet.cell(row = group_row,column = col).value).lower():
+                                day_coord = (group_row,col)
+                                col+=1
+                                continue
+                            elif str(sheet.cell(row = group_row,column = col).value).lower() == "пара" \
+                                    or "пара" in str(sheet.cell(row = group_row,column = col).value).lower():
+                                pars_coord = (group_row, col)
+                                col += 1
+                                continue
+                            elif all(i not in str(sheet.cell(row = group_row,column = col).value).lower()
+                                     for i in ("день","пара")):
+
+                                if special_timetable:
+                                    group_name = sheet.cell(row=group_row+1, column=col).value
+                                    if group_name == None:
+                                        group_name = tested_val(sheet,group_row+1,col,group_name)
+                                        if group_name == None:
+                                            group_name = sheet.cell(row = group_row,column = col).value
+                                else:
+                                    group_name = sheet.cell(row = group_row,column = col).value
+                                    if group_name == None:
+                                        group_name = tested_val(sheet,group_row,col,group_name)
+                                if group_name != None and type(group_name)!=datetime.datetime:
+                                    group_name = clear_str(group_name)
+                                    group_name = group_name.replace(" ","")
+                                    # Далее классифицируется таблица по типу и если уже была группа в списке то передаем список с группой если нет то пустой
+                                    if "занятий" in title:
+                                        if "факультативным" in title:
+                                            if group_name not in all_groups[actual_group]["ФТД"]["Занятия"]:
+                                                all_groups[actual_group]["ФТД"]["Занятия"][group_name] = pars_lessons(
+                                                    sheet,day_coord,pars_coord,special_timetable,col,{})
+                                            else:
+                                                all_groups[actual_group]["ФТД"]["Занятия"][group_name] = pars_lessons(sheet,day_coord,
+                                                                                                                      pars_coord,special_timetable,
+                                                                                                                      col,all_groups[actual_group]["ФТД"]["Занятия"][group_name],
+                                                                                                                      only_time)
+
+                                        else:
+                                            if group_name not in all_groups[actual_group]["Учебные дисциплины"]["Занятия"]:
+                                                all_groups[actual_group]["Учебные дисциплины"]["Занятия"][group_name] = pars_lessons(sheet,day_coord,pars_coord,special_timetable,col,{},
+                                                                                                                                     only_time)
+                                            else:
+                                                all_groups[actual_group]["Учебные дисциплины"]["Занятия"][
+                                                    group_name] = pars_lessons(sheet, day_coord, pars_coord,
+                                                                    special_timetable, col,
+                                                                    all_groups[actual_group]["Учебные дисциплины"]["Занятия"][group_name],only_time)
+                                    elif "экзаменационной" in title:
+                                        if "факультативным" in title:
+                                            if group_name not in all_groups[actual_group]["ФТД"]["Экзамены"]:
+                                                all_groups[actual_group]["ФТД"]["Экзамены"][group_name] = pars_lessons(sheet,day_coord,pars_coord,special_timetable,col,{},only_time)
+                                            else:
+                                                all_groups[actual_group]["ФТД"]["Экзамены"][group_name] = pars_lessons(
+                                                    sheet,day_coord,pars_coord,special_timetable,col,all_groups[actual_group]["ФТД"]["Экзамены"][group_name],only_time)
+
+                                        else:
+                                            if group_name not in all_groups[actual_group]["Учебные дисциплины"]["Экзамены"]:
+                                                all_groups[actual_group]["Учебные дисциплины"]["Экзамены"][group_name] = pars_lessons(sheet,
+                                                                                                                                      day_coord,pars_coord,special_timetable,col,
+                                                                                                                                      {},only_time)
+                                            else:
+                                                all_groups[actual_group]["Учебные дисциплины"]["Экзамены"][group_name] = pars_lessons(sheet,
+                                                                                                                        day_coord,pars_coord,special_timetable,col,
+                                                                                                                        all_groups[actual_group]["Учебные дисциплины"]["Экзамены"][group_name],
+                                                                                                                                      only_time)
+                                    elif"зачетной" in title:
+                                        if "факультативным" in title:
+                                            if group_name not in all_groups[actual_group]["ФТД"]["Зачеты"]:
+                                                all_groups[actual_group]["ФТД"]["Зачеты"][group_name] = pars_lessons(sheet,day_coord,
+                                                                                                                     pars_coord,special_timetable,col,{},only_time)
+                                            else:
+                                                all_groups[actual_group]["ФТД"]["Зачеты"][group_name] = pars_lessons(
+                                                    sheet, day_coord,
+                                                    pars_coord, special_timetable, col, all_groups[actual_group]["ФТД"]["Зачеты"][group_name],only_time)
+
+                                        else:
+                                            if group_name not in all_groups[actual_group]["Учебные дисциплины"]["Зачеты"]:
+                                                all_groups[actual_group]["Учебные дисциплины"]["Зачеты"][group_name] = pars_lessons(sheet,day_coord,
+                                                                                                                     pars_coord,special_timetable,col,{},only_time)
+                                            else:
+                                                all_groups[actual_group]["Учебные дисциплины"]["Зачеты"][group_name] = pars_lessons(sheet, day_coord,
+                                                                               pars_coord, special_timetable, col, all_groups[actual_group]["Учебные дисциплины"]["Зачеты"][group_name],
+                                                                                                                                    only_time)
+                                    elif"аттестационных испытаний" in title:
+                                        if "факультативным" in title:
+                                            if group_name not in all_groups[actual_group]["ФТД"]["Гос.экз"]:
+                                                all_groups[actual_group]["ФТД"]["Гос.экз"][group_name] = pars_lessons(sheet,day_coord,pars_coord,special_timetable,col,{},only_time)
+                                            else:
+                                                all_groups[actual_group]["ФТД"]["Гос.экз"][group_name] = pars_lessons(
+                                                    sheet,day_coord,pars_coord,special_timetable,col,all_groups[actual_group]["ФТД"]["Гос.экз"][group_name],only_time)
+
+                                        else:
+                                            if group_name not in all_groups[actual_group]["Учебные дисциплины"]["Гос.экз"]:
+                                                all_groups[actual_group]["Учебные дисциплины"]["Гос.экз"][group_name] = pars_lessons(sheet,day_coord,pars_coord,special_timetable,col,{},only_time)
+                                            else:
+                                                all_groups[actual_group]["Учебные дисциплины"]["Гос.экз"][
+                                                    group_name] = pars_lessons(sheet, day_coord, pars_coord,
+                                                                               special_timetable, col, all_groups[actual_group]["Учебные дисциплины"]["Гос.экз"][group_name],only_time)
+                            col+=1
+                if os.path.exists(os.path.join(put_dir,"group.json")):
+                    with open(f"{put_dir}/group.json","r") as file:
+                        try:
+                            timetabl = json.load(file)
+                        except:
+                            timetabl = {}
+                    if timetabl == {}:
+                        with open(f"{put_dir}/group.json", "w") as f:
+                            json.dump(all_groups, f, indent=2, ensure_ascii=True)
+                            print(f"Создан новый файл json")
                     else:
-                        all_groups["расшифровка"][abrev] = temp
-                # print(groups)
-                #Создаю json файл с расписанием и выхожу в основную директорию
-                with open(f"{put_dir}/group.json","w") as f:
-                    json.dump(all_groups,f,indent=2, ensure_ascii=False)
-                    # print(f"Создан файл {prog}.json")
-                    # os.chdir(fak_dir)
-    #     bar.next()
-    # bar.finish()
-# if __name__ == "__main__":
-#     upload_rasp()
-# a = os.getcwd()
-# # put = os.path.join(a,"Fakultet")
-# print(put)
-# print(os.listdir(put))
+                        with open(f"{put_dir}/group.json", "w") as f:
+                            for i in all_groups:
+                                for k in all_groups[i]["ФТД"]:
+                                    if all_groups[i]["ФТД"][k] != {}:
+                                        timetabl[i]["ФТД"][k] = all_groups[i]["ФТД"][k]
+                                for j in all_groups[i]["Учебные дисциплины"]:#Доделать проверку
+                                    if all_groups[i]["Учебные дисциплины"][j] != {}:
+                                        timetabl[i]["Учебные дисциплины"][j] = all_groups[i]["Учебные дисциплины"][j]
+                            json.dump(timetabl,f,ensure_ascii=True,indent=2)
+                            print(f"Обновлен json")
+
+                else:
+                    with open(f"{put_dir}/group.json","w") as f:
+                        json.dump(all_groups,f,indent=2, ensure_ascii=True)
+                        print(f"Создан новый файл json")
 if __name__ == "__main__":
+    # wb = load_workbook("./Fakultet/Медицинский факультет/Очная/Специалитет/31.05.01Лд 1.xlsx")
+    # sheet = wb[wb.sheetnames[0]]
+    # print(sheet.cell(4,1))
+    # print(tested_val(sheet,4,1,sheet.cell(4,1)))
+    start = time.time()
     upload_rasp()
+    fin = time.time()
+
+    print(fin-start)
